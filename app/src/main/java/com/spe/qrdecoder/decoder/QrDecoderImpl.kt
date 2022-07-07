@@ -10,7 +10,7 @@ import java.util.*
  * Github https://github.com/Wildanafian
  * wildanafian8@gmail.com
  */
-class QrDecoderImpl : QrDecoder {
+internal class QrDecoderImpl : QrDecoder {
 
     private val tagKey: LinkedHashMap<String, String> by lazy {
         LinkedHashMap<String, String>().apply {
@@ -42,31 +42,38 @@ class QrDecoderImpl : QrDecoder {
     override fun decodeString(rawData: String): String {
         val resultData = JSONObject()
         if (rawData.checkValidity()) {
-            var decodedRawData =
-                base64toHex(if (rawData.takeLast(2) == "==") rawData.dropLast(2) else rawData)
-            if (decodedRawData.isNotEmpty()) {
+            var iterator = tagKey.iterator()
+            var decodedData = base64toHex(if (rawData.takeLast(2) == "==") rawData.dropLast(2) else rawData)
+            if (decodedData.isNotEmpty()) {
                 val tempResultData = JSONObject()
                 var i = 0
-                while (decodedRawData.isNotEmpty() || i < 3) {
-                    for ((tag, condition) in tagKey) {
-                        if ((tag == "61" || tag == "63") && decodedRawData.take(2) == tag) {
-                            decodedRawData = decodedRawData.drop(4)
-                        } else if (decodedRawData.take(tag.length) == tag) {
+                while (decodedData.isNotEmpty() && i < 3) {
+                    if (iterator.hasNext()) {
+                        val iteratorData = iterator.next()
+                        val tag = iteratorData.key
+                        val condition = iteratorData.value
 
-                            decodedRawData = decodedRawData.drop(tag.length)
-                            val takeValueLength = decodedRawData.take(2).hexToInt()
-                            decodedRawData = decodedRawData.drop(2)
-                            val takeValue = decodedRawData.take(takeValueLength)
-                            decodedRawData = decodedRawData.drop(takeValueLength)
+                        if ((tag == "61" || tag == "63") && decodedData.take(2) == tag) {
+                            decodedData = decodedData.drop(4)
+                            iterator.remove()
+                        } else if (decodedData.take(tag.length) == tag) {
+                            decodedData = decodedData.drop(tag.length)
+                            val tagLength = decodedData.take(2).hexToInt()
+                            decodedData = decodedData.drop(2)
+                            val tagValue = decodedData.take(tagLength)
+                            decodedData = decodedData.drop(tagLength)
 
                             val realValue = convertHexToString(
-                                takeValue,
+                                tagValue,
                                 condition
                             ).uppercase(Locale.getDefault())
                             tempResultData.put(tag, realValue)
+                            iterator.remove()
                         }
+                    } else {
+                        iterator = tagKey.iterator()
+                        i++
                     }
-                    i++
                 }
                 resultData.put("isValid", true)
                 resultData.put("data", tempResultData)
