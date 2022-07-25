@@ -12,7 +12,9 @@ import java.util.*
  */
 internal class QrDecoderImpl : QrDecoder {
 
-    private val tagKey: LinkedHashMap<String, String> by lazy {
+    private val resultData = JSONObject()
+
+    private val tag: LinkedHashMap<String, String> by lazy {
         LinkedHashMap<String, String>().apply {
             put("85", "string")
             put("61", "string")
@@ -39,65 +41,78 @@ internal class QrDecoderImpl : QrDecoder {
         }
     }
 
-    override fun decodeString(rawData: String): String {
-        val resultData = JSONObject()
-        if (rawData.checkValidity()) {
-            var iterator = tagKey.iterator()
-            var decodedData = base64toHex(if (rawData.takeLast(2) == "==") rawData.dropLast(2) else rawData)
-            if (decodedData.isNotEmpty()) {
-                val tempResultData = JSONObject()
-                var i = 0
-                while (decodedData.isNotEmpty() && i < 3) {
-                    if (iterator.hasNext()) {
-                        val iteratorData = iterator.next()
-                        val tag = iteratorData.key
-                        val condition = iteratorData.value
+    override fun decodeString(data: String): JSONObject {
+        if (data.checkQrValidity()) {
 
-                        if ((tag == "61" || tag == "63") && decodedData.take(2) == tag) {
-                            decodedData = decodedData.drop(4)
-                            iterator.remove()
-                        } else if (decodedData.take(tag.length) == tag) {
-                            decodedData = decodedData.drop(tag.length)
-                            val tagLength = decodedData.take(2).hexToInt()
-                            decodedData = decodedData.drop(2)
-                            val tagValue = decodedData.take(tagLength)
-                            decodedData = decodedData.drop(tagLength)
+            var qrString = data.cleanUnnecessaryCharacter().convertToHex()
+            val tempJsonData = JSONObject()
+            var iterator = tag.iterator()
+            var i = 0
 
-                            val realValue = convertHexToString(
-                                tagValue,
-                                condition
-                            ).uppercase(Locale.getDefault())
-                            tempResultData.put(tag, realValue)
-                            iterator.remove()
-                        }
-                    } else {
-                        iterator = tagKey.iterator()
-                        i++
+            while (qrString.isNotEmpty() && i < 3) {
+                if (iterator.hasNext()) {
+                    val iteratorData = iterator.next()
+                    val tag = iteratorData.key
+                    val condition = iteratorData.value
+
+                    if (qrString.checkFirstCharEqualsToTag()) {
+
+                        qrString = qrString.removeValue(4)
+                        iterator.remove()
+
+                    } else if (qrString.checkFirstCharEqualsToTag(tag)) {
+
+                        val valueLength = qrString.getTagLengthValue(tag)
+                        val value = qrString.getValueFromTagLength(tag, valueLength)
+                        tempJsonData.put(tag, value.convertToReadableValue(condition))
+
+                        qrString = qrString.removeValue(tag.length + 2 + valueLength)
+                        iterator.remove()
+
                     }
+                } else {
+                    iterator = resetIterator()
+                    i++
                 }
-                resultData.put("isValid", true)
-                resultData.put("data", tempResultData)
-            } else {
-                resultData.put("isValid", false)
-                resultData.put("data", "")
             }
+            createJson(true, tempJsonData)
         } else {
-            resultData.put("isValid", false)
-            resultData.put("data", "")
+            createJson()
         }
-        return resultData.toString()
+
+        return resultData
     }
 
-    private fun String.checkValidity(): Boolean = this.startsWith("hQVDUFY")
+    private fun resetIterator() = tag.iterator()
 
-    private fun convertHexToString(hexData: String, condition: String): String {
-        return when (condition) {
-            "uppercase" -> hexData
-            "string" -> hexData.hexToAscii()
-            "replace f" -> hexData.replace("f", "")
-            else -> hexData
-        }
+    private fun createJson(validity: Boolean = false, data: Any = "") {
+        resultData.put("isValid", validity)
+        resultData.put("data", data)
     }
+
+    private fun String.checkFirstCharEqualsToTag(tag: String = "") =
+        if (tag.isEmpty()) this.take(2) == "61" || this.take(2) == "63"
+        else this.take(tag.length) == tag
+
+    private fun String.removeValue(count: Int) = this.drop(count)
+
+    private fun String.getTagLengthValue(tag: String) =
+        this.substring(tag.length, tag.length + 2).hexToInt()
+
+    private fun String.getValueFromTagLength(tag: String, count: Int) =
+        this.substring(tag.length + 2, tag.length + 2 + count)
+
+    private fun String.checkQrValidity(): Boolean = this.startsWith("hQVDUFY")
+
+    private fun String.convertToReadableValue(condition: String): String = when (condition) {
+        "uppercase" -> this
+        "string" -> this.hexToAscii()
+        "replace f" -> this.replace("f", "")
+        else -> this
+    }.uppercase(Locale.getDefault())
+
+    private fun String.cleanUnnecessaryCharacter(): String =
+        if (this.takeLast(2) == "==") this.dropLast(2) else this
 
     private fun String.hexToAscii(): String {
         require(length % 2 == 0) { "Must have an even length" }
@@ -110,12 +125,10 @@ internal class QrDecoderImpl : QrDecoder {
 
     private fun String.hexToInt(): Int = this.toInt(16) * 2
 
-    private fun base64toHex(base64Text: String): String {
-        return try {
-            Base64.decode(base64Text, Base64.DEFAULT).toHex()
-        } catch (e: Exception) {
-            ""
-        }
+    private fun String.convertToHex(): String = try {
+        Base64.decode(this, Base64.DEFAULT).toHex()
+    } catch (e: Exception) {
+        ""
     }
 
     private fun ByteArray.toHex(): String =

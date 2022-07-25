@@ -1,5 +1,7 @@
 package com.spe.qrdecoder.decoder
 
+import org.json.JSONObject
+
 
 /**
  * Created by Wildan Nafian on 11/06/2022.
@@ -7,5 +9,7 @@ package com.spe.qrdecoder.decoder
  * wildanafian8@gmail.com
  */
 internal interface QrDecoder {
-    fun decodeString(rawData: String): String
+
+    fun decodeString(data: String): JSONObject
+
 }
